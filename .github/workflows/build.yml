@@ -1,0 +1,161 @@
+name: Build OldCamera IPA
+
+on:
+  push:
+    branches:
+      - main
+      - master
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: oldcamera-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: macos-15
+
+    env:
+      DEVELOPER_DIR: /Applications/Xcode_16.4.app/Contents/Developer
+      SCHEME: OldCamera
+      CONFIGURATION: Release
+      BUILD_DIR: ${{ github.workspace }}/build
+      IPA: ${{ github.workspace }}/OldCamera-Unsigned.ipa
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Verify Xcode
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ ! -d "$DEVELOPER_DIR" ]; then
+            LATEST="$(ls -d /Applications/Xcode*.app | sort -V | tail -n 1)"
+            echo "Pinned Xcode not found, falling back to $LATEST"
+            echo "DEVELOPER_DIR=$LATEST/Contents/Developer" >> "$GITHUB_ENV"
+            export DEVELOPER_DIR="$LATEST/Contents/Developer"
+          fi
+          xcodebuild -version
+          xcrun --sdk iphoneos --show-sdk-version
+
+      - name: Install XcodeGen
+        shell: bash
+        run: |
+          set -euo pipefail
+          brew install xcodegen
+          xcodegen --version
+
+      - name: Generate Xcode project from project.yml
+        shell: bash
+        run: |
+          set -euo pipefail
+          xcodegen generate --spec project.yml
+          xcodebuild -project OldCamera.xcodeproj -list
+
+      - name: Build OldCamera
+        shell: bash
+        run: |
+          set -uo pipefail
+          rm -rf "$BUILD_DIR"
+          mkdir -p "$BUILD_DIR/logs"
+          LOG="$BUILD_DIR/logs/xcodebuild.log"
+
+          xcodebuild \
+            clean build \
+            -project OldCamera.xcodeproj \
+            -scheme "$SCHEME" \
+            -configuration "$CONFIGURATION" \
+            -sdk iphoneos \
+            -destination 'generic/platform=iOS' \
+            -derivedDataPath "$BUILD_DIR" \
+            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGN_IDENTITY="" \
+            DEVELOPMENT_TEAM="" \
+            COMPILER_INDEX_STORE_ENABLE=NO \
+            SWIFT_TREAT_WARNINGS_AS_ERRORS=NO \
+            GCC_TREAT_WARNINGS_AS_ERRORS=NO \
+            ONLY_ACTIVE_ARCH=NO \
+            2>&1 | tee "$LOG"
+
+          STATUS=${PIPESTATUS[0]}
+          if [ "$STATUS" -ne 0 ]; then
+            echo ""
+            echo "========== BUILD ERRORS =========="
+            grep -nEi 'error:|fatal error:|BUILD FAILED' "$LOG" | head -n 200 || true
+            echo ""
+            tail -n 150 "$LOG" || true
+            exit "$STATUS"
+          fi
+
+      - name: Verify OldCamera bundle
+        shell: bash
+        run: |
+          set -euo pipefail
+          APP="$BUILD_DIR/Build/Products/${CONFIGURATION}-iphoneos/OldCamera.app"
+          INFO="$APP/Info.plist"
+          BINARY="$APP/OldCamera"
+
+          test -d "$APP" || { echo "::error::OldCamera.app not found"; exit 1; }
+          test -f "$INFO" || { echo "::error::Info.plist missing"; exit 1; }
+          test -f "$BINARY" || { echo "::error::OldCamera executable missing"; find "$APP" -maxdepth 2 -print; exit 1; }
+
+          for KEY in CFBundleDisplayName CFBundleExecutable CFBundleIdentifier CFBundleShortVersionString; do
+            printf '%s: ' "$KEY"
+            /usr/libexec/PlistBuddy -c "Print :$KEY" "$INFO"
+          done
+
+          file "$BINARY"
+          lipo -info "$BINARY"
+
+          test -f "$APP/RecordStart.caf" || { echo "::error::RecordStart.caf missing"; exit 1; }
+          test -f "$APP/RecordStop.caf" || { echo "::error::RecordStop.caf missing"; exit 1; }
+          /usr/libexec/PlistBuddy -c "Print :NSCameraUsageDescription" "$INFO"
+          /usr/libexec/PlistBuddy -c "Print :NSMicrophoneUsageDescription" "$INFO"
+
+          ICONS="$(find "$APP" -maxdepth 1 -name 'AppIcon*.png' -print)"
+          if [ -z "$ICONS" ]; then
+            echo "::error::No AppIcon*.png inside the bundle (asset catalog icon not compiled)"
+            exit 1
+          fi
+          echo "$ICONS"
+          /usr/libexec/PlistBuddy -c "Print :CFBundleIcons" "$INFO"
+
+      - name: Create IPA
+        shell: bash
+        run: |
+          set -euo pipefail
+          APP="$BUILD_DIR/Build/Products/${CONFIGURATION}-iphoneos/OldCamera.app"
+          PAYLOAD="$GITHUB_WORKSPACE/Payload"
+          rm -rf "$PAYLOAD" "$IPA"
+          mkdir -p "$PAYLOAD"
+          cp -R "$APP" "$PAYLOAD/OldCamera.app"
+          cd "$GITHUB_WORKSPACE"
+          ditto -c -k --sequesterRsrc --keepParent "$PAYLOAD" "$IPA"
+          ls -lh "$IPA"
+          unzip -l "$IPA" | grep -F "Payload/OldCamera.app/OldCamera" >/dev/null
+          unzip -l "$IPA" | grep -F "Payload/OldCamera.app/Info.plist" >/dev/null
+          echo "IPA structure OK."
+
+      - name: Upload IPA
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: OldCamera-Unsigned-IPA
+          path: ${{ env.IPA }}
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: Upload build log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: OldCamera-Build-Log
+          path: ${{ env.BUILD_DIR }}/logs/xcodebuild.log
+          if-no-files-found: warn
+          retention-days: 7
