@@ -1,0 +1,10 @@
+OldCamera is derived from The OldOS Project by Zane Kleinberg (@zzanehip),
+licensed under the Creative Commons Attribution 4.0 International License (CC BY 4.0).
+https://creativecommons.org/licenses/by/4.0/
+Original project: https://github.com/zzanehip/The-OldOS-Project
+
+Changes made for OldCamera (standalone app, bug fixes, full-screen adaptation)
+are described in README.md and EXTRACTION.json.
+
+Bundled resources from The OldOS Project: the Camera artwork (Assets.xcassets) and the record tones (Resources/Sounds).
+The capture service is derived from Camera-SwiftUI by Rolando Rodriguez, as bundled in OldOS.
