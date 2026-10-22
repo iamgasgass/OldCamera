@@ -7,17 +7,6 @@
     {
       "filename": "ShutterSilver@2x.png",
       "idiom": "universal",
-      "resizing": {
-        "cap-insets": {
-          "left": 37,
-          "right": 37
-        },
-        "center": {
-          "mode": "stretch",
-          "width": 1
-        },
-        "mode": "3-part-horizontal"
-      },
       "scale": "2x"
     },
     {

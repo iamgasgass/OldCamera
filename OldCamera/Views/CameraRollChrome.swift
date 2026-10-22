@@ -75,11 +75,14 @@ struct CameraRollBackButton: View {
                 .shadow(color: Color.black.opacity(0.45), radius: 0, x: 0, y: -0.6)
                 .lineLimit(1)
                 .fixedSize()
-                .offset(y: -0.5)
+                .offset(y: -1.1)
                 .padding(.leading, 17)
                 .padding(.trailing, 9)
                 .frame(height: 30)
-                .background(Image("NavBackBlack").resizable())
+                .background(
+                    Image("NavBackBlack")
+                        .resizable(capInsets: EdgeInsets(top: 0, leading: 15, bottom: 0, trailing: 5.5), resizingMode: .stretch)
+                )
                 .frame(height: 33)
                 .contentShape(Rectangle())
         }

@@ -7,17 +7,6 @@
     {
       "filename": "NavBackBlack@2x.png",
       "idiom": "universal",
-      "resizing": {
-        "cap-insets": {
-          "left": 30,
-          "right": 11
-        },
-        "center": {
-          "mode": "stretch",
-          "width": 1
-        },
-        "mode": "3-part-horizontal"
-      },
       "scale": "2x"
     },
     {

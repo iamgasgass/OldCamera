@@ -250,7 +250,7 @@ struct CameraToolbar: View {
         } label: {
             ZStack {
                 Image("ShutterSilver")
-                    .resizable(capInsets: EdgeInsets(top: 0, leading: 22, bottom: 0, trailing: 22), resizingMode: .stretch)
+                    .resizable(capInsets: EdgeInsets(top: 0, leading: 18.5, bottom: 0, trailing: 18.5), resizingMode: .stretch)
                     .frame(width: width, height: 82.0 / 2.0)
                 Group {
                     if camera.mode == .photo {
