@@ -54,6 +54,12 @@ final class CameraRoll: NSObject, ObservableObject, PHPhotoLibraryChangeObserver
         }
     }
 
+    /// The thumbnail of the photo just taken, shown before the library
+    /// reports it (Camera-SwiftUI `Photo.thumbnailImage`).
+    func showCaptured(_ image: UIImage?) {
+        if let image { thumbnail = image }
+    }
+
     func photoLibraryDidChange(_ changeInstance: PHChange) {
         DispatchQueue.main.async { self.reload() }
     }

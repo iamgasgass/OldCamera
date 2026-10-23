@@ -50,6 +50,14 @@ struct OldCameraRootView: View {
                     .opacity(shutterOpacity)
                     .allowsHitTesting(false)
 
+                if camera.shouldShowSpinner {
+                    ProgressView()
+                        .progressViewStyle(.circular)
+                        .tint(.white)
+                        .scaleEffect(1.8)
+                        .allowsHitTesting(false)
+                }
+
                 VStack(spacing: 0) {
                     CameraHeader(camera: camera)
                         .padding(.top, max(topInset, 20) + 10)
@@ -131,6 +139,29 @@ struct OldCameraRootView: View {
             updateStatusBar()
         }
         .onChange(of: rollNavigator.hideBars) { _ in updateStatusBar() }
+        .onChange(of: camera.photo) { photo in
+            let roll = self.roll
+            DispatchQueue.global(qos: .userInitiated).async {
+                let thumbnail = photo?.thumbnailImage
+                DispatchQueue.main.async { roll.showCaptured(thumbnail) }
+            }
+        }
+        .alert(isPresented: $camera.showAlertError) {
+            let error = camera.alertError
+            if let secondary = error.secondaryButtonTitle {
+                return Alert(
+                    title: Text(error.title),
+                    message: Text(error.message),
+                    primaryButton: .default(Text(error.primaryButtonTitle)) { error.primaryAction?() },
+                    secondaryButton: .cancel(Text(secondary)) { error.secondaryAction?() }
+                )
+            }
+            return Alert(
+                title: Text(error.title),
+                message: Text(error.message),
+                dismissButton: .default(Text(error.primaryButtonTitle)) { error.primaryAction?() }
+            )
+        }
         .onChange(of: camera.shutterCount) { _ in
             shutterOpacity = 1
             withAnimation(.easeOut(duration: 0.35)) { shutterOpacity = 0 }

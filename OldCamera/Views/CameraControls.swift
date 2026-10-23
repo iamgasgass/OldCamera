@@ -274,7 +274,7 @@ struct CameraToolbar: View {
             }
         }
         .buttonStyle(CameraShutterStyle())
-        .disabled(camera.access != .granted || (camera.mode == .photo && camera.isBusy))
+        .disabled(camera.access != .granted || camera.isCameraButtonDisabled || (camera.mode == .photo && camera.isBusy))
     }
 }
 

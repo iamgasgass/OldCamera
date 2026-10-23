@@ -39,6 +39,21 @@ final class CameraService: NSObject, ObservableObject {
     /// Toggled when the shutter fires (for the shutter animation).
     @Published private(set) var shutterCount = 0
 
+    // Camera-SwiftUI `CameraService` / OldOS `CameraModel` state.
+    /// The capture buttons are disabled while the session is not usable.
+    @Published private(set) var isCameraButtonDisabled = true
+    /// Interrupted (call, multitasking, another app) or not running.
+    @Published private(set) var isCameraUnavailable = true
+    /// Shown when processing a photo takes longer than two seconds.
+    @Published private(set) var shouldShowSpinner = false
+    /// Flipped on / off when the shutter fires (`willCapturePhoto`).
+    @Published private(set) var willCapturePhoto = false
+    /// The last photo taken (`CameraModel.photo`).
+    @Published private(set) var photo: CameraPhoto?
+    /// `showAlertError` / `alertError`.
+    @Published var showAlertError = false
+    private(set) var alertError = CameraAlertError()
+
     @Published var flash: CameraFlash = .auto {
         didSet { applyTorch() }
     }
@@ -47,7 +62,7 @@ final class CameraService: NSObject, ObservableObject {
     let session = AVCaptureSession()
 
     private let queue = DispatchQueue(label: "com.iamgasgass.oldcamera.session")
-    private var videoInput: AVCaptureDeviceInput?
+    @objc private dynamic var videoInput: AVCaptureDeviceInput!
     private var audioInput: AVCaptureDeviceInput?
     private let photoOutput = AVCapturePhotoOutput()
     private let movieOutput = AVCaptureMovieFileOutput()
@@ -56,6 +71,8 @@ final class CameraService: NSObject, ObservableObject {
     private var recordingTimer: Timer?
     private var recordingStart: Date?
     private var orientationObserver: NSObjectProtocol?
+    private var observersAdded = false
+    private var keyValueObservations: [NSKeyValueObservation] = []
 
     /// Last known physical orientation (portrait-locked UI, rotating captures).
     @Published private(set) var deviceOrientation: UIDeviceOrientation = .portrait
@@ -95,7 +112,27 @@ final class CameraService: NSObject, ObservableObject {
             }
         default:
             access = .denied
+            presentAlert(CameraAlertError(
+                title: "Camera Access",
+                message: "OldCamera doesn't have permission to use the camera, please change privacy settings",
+                primaryButtonTitle: "Settings",
+                primaryAction: {
+                    if let url = URL(string: UIApplication.openSettingsURLString) {
+                        UIApplication.shared.open(url, options: [:], completionHandler: nil)
+                    }
+                }
+            ))
+            isCameraUnavailable = true
+            isCameraButtonDisabled = true
         }
+    }
+
+    private func presentAlert(_ alert: CameraAlertError) {
+        let show = {
+            self.alertError = alert
+            self.showAlertError = true
+        }
+        if Thread.isMainThread { show() } else { DispatchQueue.main.async(execute: show) }
     }
 
     /// OldOS `end_session`.
@@ -103,7 +140,11 @@ final class CameraService: NSObject, ObservableObject {
         if isRecording { toggleRecording() }
         queue.async {
             if self.session.isRunning { self.session.stopRunning() }
-            DispatchQueue.main.async { self.isRunning = false }
+            DispatchQueue.main.async {
+                self.isRunning = false
+                self.isCameraButtonDisabled = true
+                self.isCameraUnavailable = true
+            }
         }
     }
 
@@ -113,9 +154,14 @@ final class CameraService: NSObject, ObservableObject {
                 self.configureSession()
             }
             guard self.configured else { return }
+            self.addObservers()
             if !self.session.isRunning { self.session.startRunning() }
             let running = self.session.isRunning
-            DispatchQueue.main.async { self.isRunning = running }
+            DispatchQueue.main.async {
+                self.isRunning = running
+                self.isCameraUnavailable = !running
+                self.isCameraButtonDisabled = !running
+            }
         }
     }
 
@@ -127,7 +173,7 @@ final class CameraService: NSObject, ObservableObject {
               let input = try? AVCaptureDeviceInput(device: device),
               session.canAddInput(input) else {
             session.commitConfiguration()
-            DispatchQueue.main.async { self.access = .unavailable }
+            configurationFailed()
             return
         }
         session.addInput(input)
@@ -135,7 +181,7 @@ final class CameraService: NSObject, ObservableObject {
 
         guard session.canAddOutput(photoOutput) else {
             session.commitConfiguration()
-            DispatchQueue.main.async { self.access = .unavailable }
+            configurationFailed()
             return
         }
         session.addOutput(photoOutput)
@@ -147,6 +193,18 @@ final class CameraService: NSObject, ObservableObject {
         publishDevice(device)
         let canFlip = Self.device(for: .front) != nil && Self.device(for: .back) != nil
         DispatchQueue.main.async { self.canFlip = canFlip }
+    }
+
+    private func configurationFailed() {
+        DispatchQueue.main.async {
+            self.access = .unavailable
+            self.isCameraButtonDisabled = true
+            self.isCameraUnavailable = true
+        }
+        presentAlert(CameraAlertError(
+            title: "Camera Error",
+            message: "Camera configuration failed. Either your device camera is not available or other application is using it"
+        ))
     }
 
     private static func device(for position: AVCaptureDevice.Position) -> AVCaptureDevice? {
@@ -228,27 +286,38 @@ final class CameraService: NSObject, ObservableObject {
     func flip() {
         guard !isRecording, configured else { return }
         isBusy = true
+        isCameraButtonDisabled = true
         queue.async {
             guard let current = self.videoInput else { return }
             let target: AVCaptureDevice.Position = current.device.position == .back ? .front : .back
             guard let device = Self.device(for: target),
                   let input = try? AVCaptureDeviceInput(device: device) else {
-                DispatchQueue.main.async { self.isBusy = false }
+                DispatchQueue.main.async {
+                    self.isBusy = false
+                    self.isCameraButtonDisabled = false
+                }
                 return
             }
             self.session.beginConfiguration()
             self.session.removeInput(current)
             if self.session.canAddInput(input) {
+                NotificationCenter.default.removeObserver(self, name: AVCaptureDevice.subjectAreaDidChangeNotification, object: current.device)
+                NotificationCenter.default.addObserver(self, selector: #selector(self.subjectAreaDidChange), name: AVCaptureDevice.subjectAreaDidChangeNotification, object: input.device)
                 self.session.addInput(input)
                 self.videoInput = input
             } else {
                 self.session.addInput(current)
             }
+            if let connection = self.photoOutput.connection(with: .video), connection.isVideoStabilizationSupported {
+                connection.preferredVideoStabilizationMode = .auto
+            }
+            self.photoOutput.maxPhotoQualityPrioritization = .quality
             self.session.commitConfiguration()
             self.updatePhotoDimensions()
             self.publishDevice(self.videoInput?.device ?? device)
             DispatchQueue.main.async {
                 self.isBusy = false
+                self.isCameraButtonDisabled = false
                 self.applyTorch()
             }
         }
@@ -256,21 +325,28 @@ final class CameraService: NSObject, ObservableObject {
 
     // MARK: Focus / zoom
 
-    /// Tap to focus and expose at a point of the preview (device coordinates).
+    /// Tap to focus and expose at a point of the preview (device coordinates):
+    /// Camera-SwiftUI `focus(at:)` (continuous AF / AE at the point), watching
+    /// the subject area so focus returns to the centre when the scene changes.
     func focus(at devicePoint: CGPoint) {
+        focus(with: .continuousAutoFocus, exposureMode: .continuousAutoExposure, at: devicePoint, monitorSubjectAreaChange: true)
+    }
+
+    /// Camera-SwiftUI `focus(with:exposureMode:at:monitorSubjectAreaChange:)`.
+    func focus(with focusMode: AVCaptureDevice.FocusMode, exposureMode: AVCaptureDevice.ExposureMode, at devicePoint: CGPoint, monitorSubjectAreaChange: Bool) {
         queue.async {
             guard let device = self.videoInput?.device else { return }
             do {
                 try device.lockForConfiguration()
-                if device.isFocusPointOfInterestSupported, device.isFocusModeSupported(.autoFocus) {
+                if device.isFocusPointOfInterestSupported && device.isFocusModeSupported(focusMode) {
                     device.focusPointOfInterest = devicePoint
-                    device.focusMode = .autoFocus
+                    device.focusMode = focusMode
                 }
-                if device.isExposurePointOfInterestSupported, device.isExposureModeSupported(.autoExpose) {
+                if device.isExposurePointOfInterestSupported && device.isExposureModeSupported(exposureMode) {
                     device.exposurePointOfInterest = devicePoint
-                    device.exposureMode = .autoExpose
+                    device.exposureMode = exposureMode
                 }
-                device.isSubjectAreaChangeMonitoringEnabled = true
+                device.isSubjectAreaChangeMonitoringEnabled = monitorSubjectAreaChange
                 device.unlockForConfiguration()
             } catch {}
         }
@@ -328,19 +404,122 @@ final class CameraService: NSObject, ObservableObject {
                 }
             }
             settings.maxPhotoDimensions = self.photoOutput.maxPhotoDimensions
+            if let format = settings.availablePreviewPhotoPixelFormatTypes.first {
+                settings.previewPhotoFormat = [kCVPixelBufferPixelFormatTypeKey as String: format]
+            }
             // HDR On: the full multi-frame (Smart HDR) pipeline; Off: a single fast frame.
             settings.photoQualityPrioritization = hdr ? self.photoOutput.maxPhotoQualityPrioritization : .speed
 
             let processor = CameraPhotoProcessor(settings: settings, willCapture: {
-                DispatchQueue.main.async { self.shutterCount += 1 }
+                // Flash the screen to signal that a photo was taken.
+                DispatchQueue.main.async {
+                    self.shutterCount += 1
+                    self.willCapturePhoto.toggle()
+                    self.willCapturePhoto.toggle()
+                }
             }, completion: { processor in
+                if let data = processor.photoData {
+                    let photo = CameraPhoto(originalData: data)
+                    DispatchQueue.main.async { self.photo = photo }
+                }
                 self.queue.async {
                     self.processors[processor.settings.uniqueID] = nil
                 }
-                DispatchQueue.main.async { self.isBusy = false }
+                DispatchQueue.main.async {
+                    self.isBusy = false
+                    self.isCameraButtonDisabled = false
+                }
+            }, processing: { animate in
+                // Animates a spinner while the photo is processing.
+                DispatchQueue.main.async { self.shouldShowSpinner = animate }
             })
             self.processors[settings.uniqueID] = processor
             self.photoOutput.capturePhoto(with: settings, delegate: processor)
+        }
+    }
+
+    // MARK: KVO & observers (Camera-SwiftUI `addObservers`)
+
+    /// Call on `queue`.
+    private func addObservers() {
+        guard !observersAdded, let device = videoInput?.device else { return }
+        observersAdded = true
+
+        let pressure = observe(\.videoInput.device.systemPressureState, options: .new) { [weak self] _, change in
+            guard let state = change.newValue else { return }
+            self?.setRecommendedFrameRateRange(for: state)
+        }
+        keyValueObservations.append(pressure)
+
+        let center = NotificationCenter.default
+        center.addObserver(self, selector: #selector(subjectAreaDidChange), name: AVCaptureDevice.subjectAreaDidChangeNotification, object: device)
+        center.addObserver(self, selector: #selector(sessionRuntimeError), name: AVCaptureSession.runtimeErrorNotification, object: session)
+        center.addObserver(self, selector: #selector(sessionWasInterrupted), name: AVCaptureSession.wasInterruptedNotification, object: session)
+        center.addObserver(self, selector: #selector(sessionInterruptionEnded), name: AVCaptureSession.interruptionEndedNotification, object: session)
+    }
+
+    /// When the scene changes, focus / exposure go back to the centre.
+    @objc private func subjectAreaDidChange(_ notification: Notification) {
+        focus(with: .continuousAutoFocus, exposureMode: .continuousAutoExposure, at: CGPoint(x: 0.5, y: 0.5), monitorSubjectAreaChange: false)
+    }
+
+    /// If media services were reset, and the last start succeeded, restart.
+    @objc private func sessionRuntimeError(_ notification: Notification) {
+        guard let error = notification.userInfo?[AVCaptureSessionErrorKey] as? AVError else { return }
+        if error.code == .mediaServicesWereReset {
+            queue.async {
+                if self.configured {
+                    self.session.startRunning()
+                    let running = self.session.isRunning
+                    DispatchQueue.main.async { self.isRunning = running }
+                }
+            }
+        } else {
+            resumeInterruptedSession()
+        }
+    }
+
+    @objc private func sessionWasInterrupted(_ notification: Notification) {
+        DispatchQueue.main.async {
+            self.isCameraUnavailable = true
+            self.isCameraButtonDisabled = true
+        }
+    }
+
+    @objc private func sessionInterruptionEnded(_ notification: Notification) {
+        DispatchQueue.main.async {
+            self.isCameraUnavailable = false
+            self.isCameraButtonDisabled = false
+        }
+    }
+
+    /// Camera-SwiftUI `resumeInterruptedSession`.
+    func resumeInterruptedSession() {
+        queue.async {
+            self.session.startRunning()
+            let running = self.session.isRunning
+            DispatchQueue.main.async {
+                self.isRunning = running
+                self.isCameraUnavailable = !running
+                self.isCameraButtonDisabled = !running
+            }
+            if !running {
+                self.presentAlert(CameraAlertError(title: "Camera Error", message: "Unable to resume camera"))
+            }
+        }
+    }
+
+    /// Camera-SwiftUI `setRecommendedFrameRateRangeForPressureState`.
+    private func setRecommendedFrameRateRange(for state: AVCaptureDevice.SystemPressureState) {
+        guard let device = videoInput?.device else { return }
+        let level = state.level
+        if level == .serious || level == .critical {
+            do {
+                try device.lockForConfiguration()
+                device.activeVideoMinFrameDuration = CMTime(value: 1, timescale: 20)
+                device.activeVideoMaxFrameDuration = CMTime(value: 1, timescale: 15)
+                device.unlockForConfiguration()
+            } catch {}
         }
     }
 
@@ -433,31 +612,102 @@ final class CameraPhotoProcessor: NSObject, AVCapturePhotoCaptureDelegate {
     let settings: AVCapturePhotoSettings
     private let willCapture: () -> Void
     private let completion: (CameraPhotoProcessor) -> Void
-    private var data: Data?
+    private let processing: (Bool) -> Void
+    private(set) var photoData: Data?
+    private var maxPhotoProcessingTime: CMTime?
 
-    init(settings: AVCapturePhotoSettings, willCapture: @escaping () -> Void, completion: @escaping (CameraPhotoProcessor) -> Void) {
+    init(settings: AVCapturePhotoSettings,
+         willCapture: @escaping () -> Void,
+         completion: @escaping (CameraPhotoProcessor) -> Void,
+         processing: @escaping (Bool) -> Void) {
         self.settings = settings
         self.willCapture = willCapture
         self.completion = completion
+        self.processing = processing
+    }
+
+    func photoOutput(_ output: AVCapturePhotoOutput, willBeginCaptureFor resolvedSettings: AVCaptureResolvedPhotoSettings) {
+        maxPhotoProcessingTime = resolvedSettings.photoProcessingTimeRange.start + resolvedSettings.photoProcessingTimeRange.duration
     }
 
     func photoOutput(_ output: AVCapturePhotoOutput, willCapturePhotoFor resolvedSettings: AVCaptureResolvedPhotoSettings) {
         willCapture()
+        // Show a spinner if processing takes more than two seconds.
+        if let maxPhotoProcessingTime, maxPhotoProcessingTime > CMTime(seconds: 2, preferredTimescale: 1) {
+            processing(true)
+        }
     }
 
     func photoOutput(_ output: AVCapturePhotoOutput, didFinishProcessingPhoto photo: AVCapturePhoto, error: Error?) {
+        processing(false)
         if error == nil {
-            data = photo.fileDataRepresentation()
+            photoData = photo.fileDataRepresentation()
         }
     }
 
     func photoOutput(_ output: AVCapturePhotoOutput, didFinishCaptureFor resolvedSettings: AVCaptureResolvedPhotoSettings, error: Error?) {
-        guard error == nil, let data else {
+        guard error == nil, let data = photoData else {
             completion(self)
             return
         }
         CameraLibraryWriter.savePhoto(data, fileType: settings.processedFileType) {
             self.completion(self)
+        }
+    }
+}
+
+// MARK: - Photo (Camera-SwiftUI `Photo`, `AlertError`, `ImageResizer`)
+
+struct CameraPhoto: Identifiable, Equatable {
+    let id: String
+    let originalData: Data
+
+    init(id: String = UUID().uuidString, originalData: Data) {
+        self.id = id
+        self.originalData = originalData
+    }
+
+    var compressedData: Data? {
+        CameraImageResizer(targetWidth: 800).resize(data: originalData)?.jpegData(compressionQuality: 0.5)
+    }
+
+    var thumbnailData: Data? {
+        CameraImageResizer(targetWidth: 100).resize(data: originalData)?.jpegData(compressionQuality: 0.5)
+    }
+
+    var thumbnailImage: UIImage? {
+        thumbnailData.flatMap(UIImage.init(data:))
+    }
+
+    var image: UIImage? {
+        compressedData.flatMap(UIImage.init(data:))
+    }
+}
+
+struct CameraAlertError {
+    var title = ""
+    var message = ""
+    var primaryButtonTitle = "Accept"
+    var secondaryButtonTitle: String? = nil
+    var primaryAction: (() -> Void)? = nil
+    var secondaryAction: (() -> Void)? = nil
+}
+
+struct CameraImageResizer {
+    let targetWidth: CGFloat
+
+    func resize(data: Data) -> UIImage? {
+        guard let image = UIImage(data: data) else { return nil }
+        return resize(image: image)
+    }
+
+    func resize(image: UIImage) -> UIImage? {
+        let scale = targetWidth / max(image.size.width, 1)
+        let size = CGSize(width: targetWidth, height: image.size.height * scale)
+        let format = UIGraphicsImageRendererFormat()
+        format.scale = 1
+        return UIGraphicsImageRenderer(size: size, format: format).image { _ in
+            image.draw(in: CGRect(origin: .zero, size: size))
         }
     }
 }

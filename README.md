@@ -40,6 +40,17 @@ Every control of OldOS `Camera.swift` is included, plus the Camera-SwiftUI servi
 - **Tap to focus** shows the blue iOS 6 focus square, which shrinks into place and blinks. In OldOS the focus view was invisible.
 - **Pinch to zoom** (up to 5×) shows the iOS 6 − / + zoom slider, which you can also drag.
 
+### From the Camera-SwiftUI service of OldOS
+
+- Permission and error alerts: "Camera Access" with a Settings button, "Camera Error" when configuration fails or the session cannot resume.
+- Spinner while a photo takes more than two seconds to process.
+- Focus returns to the centre when the scene changes (subject-area monitoring).
+- Video stabilisation after switching camera.
+- Frame-rate throttling under thermal pressure.
+- Recovery after interruptions (calls, other apps) and media-services resets.
+- Embedded preview, HEVC capture and the photo model with compressed data and thumbnail. The thumbnail shows the new shot immediately.
+- The capture buttons are disabled while the camera is unavailable.
+
 ### Camera Roll and display
 
 - **Thumbnail** updates live. OldOS re-queried after 0.65 s, so it was often one shot behind.
