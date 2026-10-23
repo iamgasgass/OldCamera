@@ -19,10 +19,7 @@ struct OldCameraRootView: View {
     @State private var pinchStartZoom: CGFloat?
     @State private var showZoom = false
     @State private var zoomHideWork: DispatchWorkItem?
-    /// The iOS 6 iris: closed at launch, opens when the camera runs.
-    @State private var irisAperture: CGFloat = 0
-    /// The iOS 6 3D flip of the viewfinder when switching camera.
-    @State private var previewFlip: Double = 0
+    @State private var shutterOpacity: Double = 0
 
     var body: some View {
         GeometryReader { geometry in
@@ -37,10 +34,6 @@ struct OldCameraRootView: View {
                 }, onPinch: { scale, ended in
                     pinch(scale, ended: ended)
                 })
-                .rotation3DEffect(.degrees(previewFlip), axis: (x: 0, y: 1, z: 0), perspective: 0.6)
-                // The viewfinder fills the area above the silver toolbar.
-                .frame(width: geometry.size.width, height: max(geometry.size.height - 60 - bottomInset, 1))
-                .frame(maxHeight: .infinity, alignment: .top)
 
                 if let focusPoint {
                     CameraFocusSquare()
@@ -49,15 +42,13 @@ struct OldCameraRootView: View {
                         .allowsHitTesting(false)
                 }
 
-                CameraIris(
-                    aperture: irisAperture,
-                    center: CGPoint(x: geometry.size.width / 2, y: (geometry.size.height - 60 - bottomInset) / 2)
-                )
-                .allowsHitTesting(false)
-
                 if camera.access == .denied || camera.access == .unavailable {
                     accessMessage
                 }
+
+                Color.black
+                    .opacity(shutterOpacity)
+                    .allowsHitTesting(false)
 
                 if camera.shouldShowSpinner {
                     ProgressView()
@@ -171,22 +162,9 @@ struct OldCameraRootView: View {
                 dismissButton: .default(Text(error.primaryButtonTitle)) { error.primaryAction?() }
             )
         }
-        .onChange(of: camera.isRunning) { running in
-            if running {
-                openIris(after: 0.15)
-            } else {
-                var transaction = Transaction()
-                transaction.disablesAnimations = true
-                withTransaction(transaction) { irisAperture = 0 }
-            }
-        }
-        .onChange(of: camera.flipCount) { _ in
-            flipPreview()
-        }
         .onChange(of: camera.shutterCount) { _ in
-            // iOS 6: the iris snaps shut on the shutter and opens again.
-            withAnimation(.easeIn(duration: 0.12)) { irisAperture = 0 }
-            openIris(after: 0.22)
+            shutterOpacity = 1
+            withAnimation(.easeOut(duration: 0.35)) { shutterOpacity = 0 }
         }
     }
 
@@ -207,23 +185,6 @@ struct OldCameraRootView: View {
             if camera.access == .denied, let url = URL(string: UIApplication.openSettingsURLString) {
                 UIApplication.shared.open(url)
             }
-        }
-    }
-
-    private func openIris(after delay: TimeInterval) {
-        DispatchQueue.main.asyncAfter(deadline: .now() + delay) {
-            guard camera.isRunning else { return }
-            withAnimation(.easeOut(duration: 0.4)) { irisAperture = 1 }
-        }
-    }
-
-    private func flipPreview() {
-        withAnimation(.easeIn(duration: 0.22)) { previewFlip = 90 }
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.22) {
-            var transaction = Transaction()
-            transaction.disablesAnimations = true
-            withTransaction(transaction) { previewFlip = -90 }
-            withAnimation(.easeOut(duration: 0.28)) { previewFlip = 0 }
         }
     }
 

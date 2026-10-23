@@ -2,9 +2,7 @@ import SwiftUI
 import AVFoundation
 
 /// Camera-SwiftUI `CameraPreview`: the live `AVCaptureVideoPreviewLayer`,
-/// portrait. It shows the whole frame that will be captured (aspect fit,
-/// 4:3 in photo mode like the iOS 6 viewfinder) instead of the zoomed-in
-/// aspect-fill crop of OldOS. The tap recogniser of the original posted a
+/// aspect-filled and portrait. The tap recogniser of the original posted a
 /// focus point to an invisible view; taps and pinches are now reported so
 /// OldCamera can focus, show the iOS 6 focus square and zoom.
 struct CameraPreview: UIViewRepresentable {
@@ -26,7 +24,7 @@ struct CameraPreview: UIViewRepresentable {
         override init(frame: CGRect) {
             super.init(frame: frame)
             backgroundColor = .black
-            previewLayer.videoGravity = .resizeAspect
+            previewLayer.videoGravity = .resizeAspectFill
             addGestureRecognizer(UITapGestureRecognizer(target: self, action: #selector(tapped(_:))))
             addGestureRecognizer(UIPinchGestureRecognizer(target: self, action: #selector(pinched(_:))))
         }

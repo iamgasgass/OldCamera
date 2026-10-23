@@ -36,10 +36,8 @@ final class CameraService: NSObject, ObservableObject {
     @Published private(set) var zoom: CGFloat = 1
     @Published private(set) var maxZoom: CGFloat = 5
     @Published private(set) var isBusy = false
-    /// Bumped when the shutter fires (iris animation).
+    /// Toggled when the shutter fires (for the shutter animation).
     @Published private(set) var shutterCount = 0
-    /// Bumped when switching camera (viewfinder flip animation).
-    @Published private(set) var flipCount = 0
 
     // Camera-SwiftUI `CameraService` / OldOS `CameraModel` state.
     /// The capture buttons are disabled while the session is not usable.
@@ -64,7 +62,7 @@ final class CameraService: NSObject, ObservableObject {
     let session = AVCaptureSession()
 
     private let queue = DispatchQueue(label: "com.iamgasgass.oldcamera.session")
-    private var videoInput: AVCaptureDeviceInput?
+    @objc private dynamic var videoInput: AVCaptureDeviceInput!
     private var audioInput: AVCaptureDeviceInput?
     private let photoOutput = AVCapturePhotoOutput()
     private let movieOutput = AVCaptureMovieFileOutput()
@@ -74,8 +72,7 @@ final class CameraService: NSObject, ObservableObject {
     private var recordingStart: Date?
     private var orientationObserver: NSObjectProtocol?
     private var observersAdded = false
-    /// System pressure of the active camera (re-armed when switching camera).
-    private var pressureObservation: NSKeyValueObservation?
+    private var keyValueObservations: [NSKeyValueObservation] = []
 
     /// Last known physical orientation (portrait-locked UI, rotating captures).
     @Published private(set) var deviceOrientation: UIDeviceOrientation = .portrait
@@ -96,7 +93,6 @@ final class CameraService: NSObject, ObservableObject {
     }
 
     deinit {
-        pressureObservation?.invalidate()
         if let orientationObserver { NotificationCenter.default.removeObserver(orientationObserver) }
     }
 
@@ -291,7 +287,6 @@ final class CameraService: NSObject, ObservableObject {
         guard !isRecording, configured else { return }
         isBusy = true
         isCameraButtonDisabled = true
-        flipCount += 1
         queue.async {
             guard let current = self.videoInput else { return }
             let target: AVCaptureDevice.Position = current.device.position == .back ? .front : .back
@@ -310,7 +305,6 @@ final class CameraService: NSObject, ObservableObject {
                 NotificationCenter.default.addObserver(self, selector: #selector(self.subjectAreaDidChange), name: AVCaptureDevice.subjectAreaDidChangeNotification, object: input.device)
                 self.session.addInput(input)
                 self.videoInput = input
-                if self.observersAdded { self.observePressure(of: input.device) }
             } else {
                 self.session.addInput(current)
             }
@@ -451,24 +445,17 @@ final class CameraService: NSObject, ObservableObject {
         guard !observersAdded, let device = videoInput?.device else { return }
         observersAdded = true
 
-        observePressure(of: device)
+        let pressure = observe(\.videoInput.device.systemPressureState, options: .new) { [weak self] _, change in
+            guard let state = change.newValue else { return }
+            self?.setRecommendedFrameRateRange(for: state)
+        }
+        keyValueObservations.append(pressure)
 
         let center = NotificationCenter.default
         center.addObserver(self, selector: #selector(subjectAreaDidChange), name: AVCaptureDevice.subjectAreaDidChangeNotification, object: device)
         center.addObserver(self, selector: #selector(sessionRuntimeError), name: AVCaptureSession.runtimeErrorNotification, object: session)
         center.addObserver(self, selector: #selector(sessionWasInterrupted), name: AVCaptureSession.wasInterruptedNotification, object: session)
         center.addObserver(self, selector: #selector(sessionInterruptionEnded), name: AVCaptureSession.interruptionEndedNotification, object: session)
-    }
-
-    /// KVO directly on the device (a plain `@objc` key path). Observing
-    /// `videoInput.device.systemPressureState` through the implicitly
-    /// unwrapped input from the session queue crashed at launch.
-    private func observePressure(of device: AVCaptureDevice) {
-        pressureObservation?.invalidate()
-        pressureObservation = device.observe(\.systemPressureState, options: .new) { [weak self] _, change in
-            guard let state = change.newValue else { return }
-            self?.queue.async { self?.setRecommendedFrameRateRange(for: state) }
-        }
     }
 
     /// When the scene changes, focus / exposure go back to the centre.
@@ -526,19 +513,14 @@ final class CameraService: NSObject, ObservableObject {
     private func setRecommendedFrameRateRange(for state: AVCaptureDevice.SystemPressureState) {
         guard let device = videoInput?.device else { return }
         let level = state.level
-        guard level == .serious || level == .critical else { return }
-        // Only frame rates the active format supports (an unsupported one
-        // raises an Objective-C exception).
-        let supported = device.activeFormat.videoSupportedFrameRateRanges.contains {
-            $0.minFrameRate <= 15 && $0.maxFrameRate >= 20
+        if level == .serious || level == .critical {
+            do {
+                try device.lockForConfiguration()
+                device.activeVideoMinFrameDuration = CMTime(value: 1, timescale: 20)
+                device.activeVideoMaxFrameDuration = CMTime(value: 1, timescale: 15)
+                device.unlockForConfiguration()
+            } catch {}
         }
-        guard supported else { return }
-        do {
-            try device.lockForConfiguration()
-            device.activeVideoMinFrameDuration = CMTime(value: 1, timescale: 20)
-            device.activeVideoMaxFrameDuration = CMTime(value: 1, timescale: 15)
-            device.unlockForConfiguration()
-        } catch {}
     }
 
     // MARK: Video (OldOS `record`)
