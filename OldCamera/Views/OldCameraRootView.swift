@@ -8,6 +8,7 @@ import AVFoundation
 /// viewer (inert in OldOS).
 struct OldCameraRootView: View {
     @Environment(\.scenePhase) private var scenePhase
+    @Environment(\.colorScheme) private var colorScheme
     @StateObject private var camera = CameraService()
     @StateObject private var rollNavigator = CameraRollNavigator()
     @StateObject private var safeArea = OldOSSafeArea()
@@ -90,6 +91,7 @@ struct OldCameraRootView: View {
             .onAppear { safeArea.refresh() }
         }
         .ignoresSafeArea()
+        .environment(\.oldCameraTheme, OldCameraTheme.theme(isDark: colorScheme == .dark))
         .environmentObject(rollNavigator)
         .sheet(item: $rollNavigator.systemSheet) { sheet in
             switch sheet {
@@ -102,6 +104,7 @@ struct OldCameraRootView: View {
             }
         }
         .onAppear {
+            CameraSettings.shared.apply()
             camera.start()
             roll.start()
             updateStatusBar()
@@ -109,6 +112,7 @@ struct OldCameraRootView: View {
         .onChange(of: scenePhase) { phase in
             switch phase {
             case .active:
+                CameraSettings.shared.apply()
                 if rollNavigator.viewer == nil { camera.start() }
                 roll.reload()
             case .background:

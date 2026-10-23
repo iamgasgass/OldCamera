@@ -48,6 +48,7 @@ Every control of OldOS `Camera.swift` is included, plus the Camera-SwiftUI servi
   - Email / Message / Copy / Share and Delete;
   - **Camera** returns to the viewfinder.
 - **Rotating icons:** turn the phone and the glyphs rotate while the interface stays portrait, as on iOS 6.
+- **Aspect UI** in Settings › OldCamera: *Sistema*, *Chiaro* or *Scuro*. In Scuro the silver toolbar, shutter, capsules and photo / video switch use OldSafari's Private graphite palette, with light glyphs; the Camera Roll viewer keeps its black chrome in both.
 - **Full screen:** the viewfinder fills the display, the header sits below the Dynamic Island, the silver toolbar extends behind the home indicator, and the status bar is hidden like iOS 6.
 
 ## Architecture
@@ -62,6 +63,7 @@ OldCamera/
 │   ├── Store/                        # CameraService (AVFoundation), CameraRoll (PhotoKit), CameraRollActions
 │   ├── Views/                        # root, preview + focus square, header / toolbar / switch, Camera Roll viewer
 │   ├── Support/                      # OldOSKit (shared with OldSafari) + Camera additions
+│   ├── Settings.bundle/              # Settings › OldCamera (Aspect UI)
 │   ├── Resources/Sounds/             # RecordStart.caf, RecordStop.caf
 │   ├── Assets.xcassets/              # Camera Icons (iOS 6 artwork, renamed) + app icon (Any / Dark / Tinted)
 │   └── Info.plist

@@ -19,13 +19,14 @@ func cameraIconAngle(_ orientation: UIDeviceOrientation) -> Angle {
 
 /// OldOS `camera_capsule`: the translucent white pill with a dark outline.
 struct CameraCapsule<Content: View>: View {
+    @Environment(\.oldCameraTheme) private var theme
     @ViewBuilder var content: () -> Content
 
     var body: some View {
         ZStack {
             Capsule()
-                .fill(OldCameraSilverChrome.capsuleFill)
-                .oldOSStrokeCapsule(OldCameraSilverChrome.capsuleStroke, lineWidth: 0.95)
+                .fill(theme.capsuleFill)
+                .oldOSStrokeCapsule(theme.capsuleStroke, lineWidth: 0.95)
             content()
         }
     }
@@ -36,6 +37,7 @@ struct CameraCapsule<Content: View>: View {
 /// OldOS `camera_header`: flash capsule, HDR capsule, front / back toggle,
 /// and the recording time while filming.
 struct CameraHeader: View {
+    @Environment(\.oldCameraTheme) private var theme
     @ObservedObject var camera: CameraService
     @State private var flashExpanded = false
 
@@ -70,6 +72,7 @@ struct CameraHeader: View {
                     Image("CameraFlip")
                         .resizable()
                         .frame(width: 65, height: 65.0 / 120.0 * 62.0)
+                        .if(theme.invertFlip) { $0.colorInvert().saturation(0) }
                         .rotationEffect(cameraIconAngle(camera.deviceOrientation))
                         .animation(.easeInOut(duration: 0.3), value: camera.deviceOrientation)
                 }
@@ -90,7 +93,7 @@ struct CameraHeader: View {
                         CameraCapsule {
                             Text(camera.hdr ? "HDR On" : "HDR Off")
                                 .font(OldOSFont.bold(14))
-                                .foregroundColor(OldCameraSilverChrome.capsuleText)
+                                .foregroundColor(theme.capsuleText)
                         }
                         .frame(width: 95, height: capsuleHeight)
                     }
@@ -109,6 +112,7 @@ struct CameraHeader: View {
         CameraCapsule {
             HStack(spacing: 0) {
                 Image("FlashBolt")
+                    .cameraGlyph(theme.glyphTint)
                     .rotationEffect(cameraIconAngle(camera.deviceOrientation))
                     .animation(.easeInOut(duration: 0.3), value: camera.deviceOrientation)
                     .padding(.leading, 10)
@@ -121,7 +125,7 @@ struct CameraHeader: View {
                         } label: {
                             Text(option.rawValue)
                                 .font(OldOSFont.bold(14))
-                                .foregroundColor(OldCameraSilverChrome.capsuleText)
+                                .foregroundColor(theme.capsuleText)
                                 .opacity(option == camera.flash ? 1 : 0.55)
                                 .frame(width: 44, height: capsuleHeight)
                                 .contentShape(Rectangle())
@@ -132,7 +136,7 @@ struct CameraHeader: View {
                 } else {
                     Text(camera.flash.rawValue)
                         .font(OldOSFont.bold(14))
-                        .foregroundColor(OldCameraSilverChrome.capsuleText)
+                        .foregroundColor(theme.capsuleText)
                         .frame(maxWidth: .infinity)
                         .padding(.trailing, 6)
                 }
@@ -159,6 +163,7 @@ struct CameraHeader: View {
 /// thumbnail, the silver shutter and the photo / video switch. Extended
 /// behind the home indicator.
 struct CameraToolbar: View {
+    @Environment(\.oldCameraTheme) private var theme
     @ObservedObject var camera: CameraService
     @ObservedObject var roll: CameraRoll
     let bottomInset: CGFloat
@@ -195,8 +200,8 @@ struct CameraToolbar: View {
         }
         .background(
             VStack(spacing: 0) {
-                LinearGradient(oldOS: OldCameraSilverChrome.toolbar).frame(height: 60)
-                OldCameraSilverChrome.toolbarBottom
+                LinearGradient(oldOS: theme.toolbar).frame(height: 60)
+                theme.toolbarBottom
             }
         )
         .onReceive(blinkTimer) { _ in
@@ -230,8 +235,8 @@ struct CameraToolbar: View {
                     .offset(y: 2.0 / 3.0)
                     .clipShape(RoundedRectangle(cornerRadius: 3))
             )
-            .shadow(color: Color.white.opacity(0.48), radius: 0, x: 0, y: 0.8)
-            .oldOSStrokeRoundedRectangle(3, .oldOS(73, 74, 76), lineWidth: 0.33)
+            .shadow(color: theme.recessHighlight, radius: 0, x: 0, y: 0.8)
+            .oldOSStrokeRoundedRectangle(3, theme.recessStroke, lineWidth: 0.33)
             .rotationEffect(cameraIconAngle(camera.deviceOrientation))
             .animation(.easeInOut(duration: 0.3), value: camera.deviceOrientation)
         }
@@ -252,9 +257,12 @@ struct CameraToolbar: View {
                 Image("ShutterSilver")
                     .resizable(capInsets: EdgeInsets(top: 0, leading: 18.5, bottom: 0, trailing: 18.5), resizingMode: .stretch)
                     .frame(width: width, height: 82.0 / 2.0)
+                    .saturation(theme.artworkSaturation)
+                    .brightness(theme.artworkBrightness)
                 Group {
                     if camera.mode == .photo {
                         Image("ShutterCamera")
+                            .cameraGlyph(theme.shutterIconTint)
                     } else if camera.isRecording && blink {
                         Image("ShutterRecordOn")
                     } else {
@@ -281,14 +289,14 @@ struct CameraShutterStyle: ButtonStyle {
 // MARK: - Photo / video switch (`camera_flipper`)
 
 struct CameraModeSwitch: View {
+    @Environment(\.oldCameraTheme) private var theme
     @ObservedObject var camera: CameraService
     @State private var offset: CGFloat = 0
     @State private var dragging = false
 
-    private let track = LinearGradient(oldOS: [
-        OldOSStop(.oldOS(103, 104, 107), 0),
-        OldOSStop(.oldOS(141, 143, 148), 0.65)
-    ])
+    private var track: LinearGradient {
+        LinearGradient(oldOS: theme.switchTrack)
+    }
 
     var body: some View {
         GeometryReader { geometry in
@@ -297,9 +305,11 @@ struct CameraModeSwitch: View {
             VStack(spacing: 1) {
                 HStack {
                     Image("ModeCamera")
+                        .cameraGlyph(theme.glyphTint)
                         .rotationEffect(cameraIconAngle(camera.deviceOrientation))
                     Spacer()
                     Image("ModeVideo")
+                        .cameraGlyph(theme.glyphTint)
                         .rotationEffect(cameraIconAngle(camera.deviceOrientation))
                 }
                 .animation(.easeInOut(duration: 0.3), value: camera.deviceOrientation)
@@ -308,12 +318,12 @@ struct CameraModeSwitch: View {
                         .fill(Color.clear)
                         .frame(width: width, height: 15)
                         .oldOSInnerShadowBackground(Capsule(), track, radius: 0.8, offset: CGPoint(x: 0, y: 2.0 / 3.0), intensity: 0.45)
-                        .shadow(color: Color.white.opacity(0.48), radius: 0, x: 0, y: 0.8)
-                        .oldOSStrokeCapsule(.oldOS(73, 74, 76), lineWidth: 0.33)
+                        .shadow(color: theme.recessHighlight, radius: 0, x: 0, y: 0.8)
+                        .oldOSStrokeCapsule(theme.recessStroke, lineWidth: 0.33)
                     Capsule()
-                        .fill(LinearGradient(oldOS: [.oldOS(227, 229, 232), .oldOS(119, 121, 126)]))
+                        .fill(LinearGradient(oldOS: theme.switchKnob))
                         .shadow(color: Color.black.opacity(0.25), radius: 1, x: offset > width / 2 ? -1 : 1, y: 1)
-                        .oldOSStrokeCapsule(.oldOS(114, 113, 113), lineWidth: 0.7)
+                        .oldOSStrokeCapsule(theme.switchKnobStroke, lineWidth: 0.7)
                         .frame(width: width / 3, height: 14)
                         .offset(x: -width / 2 + offset + width / 6)
                 }

@@ -1,0 +1,41 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>StringsTable</key>
+	<string>Root</string>
+	<key>PreferenceSpecifiers</key>
+	<array>
+		<dict>
+			<key>Type</key>
+			<string>PSGroupSpecifier</string>
+			<key>Title</key>
+			<string>Aspect UI</string>
+			<key>FooterText</key>
+			<string>Sistema segue l'aspetto chiaro/scuro di iOS. Scuro usa la palette Private di OldSafari.</string>
+		</dict>
+		<dict>
+			<key>Type</key>
+			<string>PSMultiValueSpecifier</string>
+			<key>Title</key>
+			<string>Aspect UI</string>
+			<key>Key</key>
+			<string>OldCamera.Appearance</string>
+			<key>DefaultValue</key>
+			<string>system</string>
+			<key>Titles</key>
+			<array>
+				<string>Sistema</string>
+				<string>Chiaro</string>
+				<string>Scuro</string>
+			</array>
+			<key>Values</key>
+			<array>
+				<string>system</string>
+				<string>light</string>
+				<string>dark</string>
+			</array>
+		</dict>
+	</array>
+</dict>
+</plist>

@@ -9,6 +9,7 @@ final class OldCameraAppDelegate: UIResponder, UIApplicationDelegate {
         didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]?
     ) -> Bool {
         UIDevice.current.beginGeneratingDeviceOrientationNotifications()
+        _ = CameraSettings.shared
         return true
     }
 
@@ -38,6 +39,7 @@ final class OldCameraSceneDelegate: UIResponder, UIWindowSceneDelegate {
         window.backgroundColor = .black
         self.window = window
         window.makeKeyAndVisible()
+        CameraSettings.shared.apply()
     }
 }
 
