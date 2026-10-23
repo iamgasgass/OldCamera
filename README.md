@@ -23,7 +23,7 @@ Every control of OldOS `Camera.swift` is included, plus the Camera-SwiftUI servi
 
 ### Shooting
 
-- **Photo:** the shutter takes a photo and saves it to the Camera Roll, with a quick black shutter flash. Each photo is saved in the orientation the phone was held. OldOS always saved portrait.
+- **Photo:** the shutter takes a photo and saves it to the Camera Roll, with the iOS 6 iris: the six metal blades snap shut on the shutter and open again (the iris also opens when the camera starts or comes back from the Camera Roll). Each photo is saved in the orientation the phone was held. OldOS always saved portrait.
 - **Video:**
   - the shutter starts and stops recording, with the original iOS 6 start / stop tones;
   - the record button blinks red and the 00:00:00 timer runs;
@@ -36,6 +36,7 @@ Every control of OldOS `Camera.swift` is included, plus the Camera-SwiftUI servi
 
 - **Flash capsule** (shown only when the active camera has a flash): tap the bolt to unfold **Auto / On / Off**. It applies to photos; in video mode it drives the torch while recording. In OldOS it only displayed "Auto".
 - **HDR capsule** in photo mode: **HDR On** uses the full multi-frame (Smart HDR) capture, **HDR Off** a single fast frame. In OldOS it was only drawn.
+- **Viewfinder flip:** switching between front and back cameras turns the viewfinder over in 3D, as on iOS 6.
 - **Front / back toggle**, hidden while recording, like OldOS.
 - **Tap to focus** shows the blue iOS 6 focus square, which shrinks into place and blinks. In OldOS the focus view was invisible.
 - **Pinch to zoom** (up to 5×) shows the iOS 6 − / + zoom slider, which you can also drag.

@@ -36,8 +36,10 @@ final class CameraService: NSObject, ObservableObject {
     @Published private(set) var zoom: CGFloat = 1
     @Published private(set) var maxZoom: CGFloat = 5
     @Published private(set) var isBusy = false
-    /// Toggled when the shutter fires (for the shutter animation).
+    /// Bumped when the shutter fires (iris animation).
     @Published private(set) var shutterCount = 0
+    /// Bumped when switching camera (viewfinder flip animation).
+    @Published private(set) var flipCount = 0
 
     // Camera-SwiftUI `CameraService` / OldOS `CameraModel` state.
     /// The capture buttons are disabled while the session is not usable.
@@ -287,6 +289,7 @@ final class CameraService: NSObject, ObservableObject {
         guard !isRecording, configured else { return }
         isBusy = true
         isCameraButtonDisabled = true
+        flipCount += 1
         queue.async {
             guard let current = self.videoInput else { return }
             let target: AVCaptureDevice.Position = current.device.position == .back ? .front : .back
